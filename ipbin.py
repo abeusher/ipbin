@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 ipbin.py - A library by Abe Usher to help compute variable precision ipv4 address intervals,
 for use in Big Data analysis, ipbin|ipbin computation, and other quantitative data analysis.
@@ -31,19 +30,15 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-import sys
-reload(sys)
-sys.setdefaultencoding("utf-8")
-import time
-import datetime
-import socket
+import codecs
 import random
+import socket
 
 __base32 = '01abcdef'
-__decodemap = { }
-for i in range(len(__base32)):
-    __decodemap[__base32[i]] = i
-del i
+__decodemap = {}
+
+for i, num in enumerate(__base32):
+    __decodemap[num] = i
 
 """
 This module creates a fuzzy precision representation of an IPv4 address interval.
@@ -52,7 +47,7 @@ It makes calculations based on an IPv4 address space of 4,294,967,296 possible v
 
 Each character added to the ipbin reduces the IPv4 space interval ambiguity by a factor of 8.
 Note: future versions will allow a tunable jump of ambiguity reduction, not hard coded to 8.
-Valid characters for encoding the floating point time into ASCII characters include {01abcdef}
+Valid characters for encoding the floating point address into ASCII characters include {01abcdef}
 
 0 +/- 4.2 billion IP addresses
 1 +/- 268,435,456 IP addresses
@@ -67,87 +62,107 @@ Valid characters for encoding the floating point time into ASCII characters incl
 10 +/- 2 IP addresses"""
 
 
-def iptoint(ip):
+def iptoint(ip_v4: str) -> int:
     """
     Convert an ip address to an integer.
     Adopted from http://goo.gl/AnSFV
+    :param ip_v4: IPv4 address
+    :returns: int of IPv4 hex
     """
-    return int(socket.inet_aton(ip).encode('hex'),16)
+    return int(socket.inet_aton(ip_v4).hex(), 16)
 
-def inttoip(ip):
+
+def inttoip(ip_int: int) -> str:
     """
     Convert an integer into an IPv4 address.
     Adopted from http://goo.gl/AnSFV
+    :param ip_int: int for ip address
+    :returns: IPv4 address
     """
-    return socket.inet_ntoa(hex(ip)[2:].zfill(8).decode('hex'))
+    return socket.inet_ntoa(codecs.decode(hex(ip_int)[2:].zfill(8).encode(), 'hex'))
 
-def decode_exactly(ipbin):
+
+def decode_exactly(ipbin: str) -> tuple:
     """
     Decode the ipbin to its exact values, including the error
-    margins of the result.  Returns two float values: ipbin
-    and the plus/minus error for epoch seconds.
+    margins of the result.
+    :param ipbin: ipbin str
+    :returns: Two float values: floating point value and the plus/minus error.
     """
-    ip_interval = (0.0, 4294967295.0)#from 0.0.0.0 to 256.256.256.256
-    ip_range = (ip_interval[0] + ip_interval[1])/2  #this constant is used to calculate the potential time error defined by a particular number of characters
-    for c in ipbin:
-        cd = __decodemap[c]
+    ip_interval = (0.0, 4294967295.0)  # from 0.0.0.0 to 256.256.256.256
+    ip_range = (
+        ip_interval[0] + ip_interval[1]
+    ) / 2  # this constant is used to calculate the potential address error \
+           # defined by a particular number of characters
+    for char in ipbin:
+        char_decoded = __decodemap[char]
         for mask in [4, 2, 1]:
-            ip_range /=2
-            mid = (ip_interval[0] + ip_interval[1])/2
-            if cd & mask:
+            ip_range /= 2
+            mid = (ip_interval[0] + ip_interval[1]) / 2
+            if char_decoded & mask:
                 ip_interval = (mid, ip_interval[1])
             else:
                 ip_interval = (ip_interval[0], mid)
-    ip_value = (ip_interval[0] + ip_interval[1])/2
+    ip_value = (ip_interval[0] + ip_interval[1]) / 2
     return (ip_value, ip_range)
 
-def decode(ipbin):
+
+def decode(ipbin: str) -> float:
     """
-    Decode ipbin, returning a single floating point value for epoch seconds.
+    Decode ipbin, returning a single floating point value for address.
+    :param ipbin: ipbin str
+    :returns: a single floating point value for address.
     """
-    ip_value, ip_range = decode_exactly(ipbin)
-    #drop the time_error for now
+    ip_value, _ = decode_exactly(ipbin)
     return ip_value
 
-def encode(ip_integer, precision=10):
+
+def encode(ip_integer: int, precision: int = 10) -> str:
     """
-    Encode an IPv4 address given as a floating point number (dotted quad notation turned into an integer, the intger turned into a floating point)
+    Encode an IPv4 address given as a floating point number
+    (dotted quad notation turned into an integer, the integer turned into a floating point)
     and return an IPv4 address as an integer, plus a range.
+    :param ip_integer: floating point number for an IPv4 address
+    :param precision: precision of ipbin string
+    :returns: ipbin str
     """
-    if precision > 10:
-        #wtf? we can't subdivide to less than one IP address.
-        precision = 10
-    ip_interval = (0.0, 4294967295.0)#from 0.0.0.0 to 256.256.256.256
+
+    precision = min(precision, 10) # we can't subdivide to less than one IP address.
+    ip_interval = (0.0, 4294967295.0)  # from 0.0.0.0 to 256.256.256.256
     ipbin = []
     bits = [4, 2, 1]
     bit = 0
-    ch = 0
+    char = 0
     while len(ipbin) < precision:
-        mid = (ip_interval[0] + ip_interval[1])/2
+        mid = (ip_interval[0] + ip_interval[1]) / 2
         if ip_integer > mid:
-            ch |= bits[bit]
+            char |= bits[bit]
             ip_interval = (mid, ip_interval[1])
         else:
             ip_interval = (ip_interval[0], mid)
         if bit < 2:
             bit += 1
         else:
-            ipbin += __base32[ch]
+            ipbin += __base32[char]
             bit = 0
-            ch = 0
+            char = 0
     return ''.join(ipbin)
 
+
 def test():
-# Examples of encoding
+    """
+    Examples of encoding
+    """
     humangeo_ip_quad = '66.96.160.133'
     humangeo_ip_integer = iptoint(humangeo_ip_quad)
-    for i in range (1,11):
-        print '-----'
-        print 'precision =', i
-        precision = i
+    for i_prec in range(1, 11):
+        print('-----')
+        print('precision =', i_prec)
+        precision = i_prec
         ipbin_humangeo = encode(humangeo_ip_integer, precision=precision)
-        print ipbin_humangeo
-        print decode_exactly(ipbin_humangeo)
+        print(ipbin_humangeo)
+        print(decode_exactly(ipbin_humangeo))
+
 
 def random_range():
     """
@@ -156,20 +171,20 @@ def random_range():
     numbers_to_test = 100
     integer_space = 4294967295.0
     list_of_bins = []
-    for i in range(100):
+    for _ in range(numbers_to_test):
         multiple = random.random()
-        value = multiple * 4294967295.0
+        value = multiple * integer_space
         ipbin = encode(value)
         list_of_bins.append(ipbin)
     list_of_bins.sort()
-    for bin in list_of_bins:
-        print bin
+    for ip_bin in list_of_bins:
+        print(ip_bin)
 
-    print
     another = '10.86.41.92'
     number = iptoint(another)
     another_bin = encode(number)
-    print another_bin
+    print(another_bin)
+
 
 if __name__ == "__main__":
     """
